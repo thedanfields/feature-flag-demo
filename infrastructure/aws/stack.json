@@ -46,30 +46,40 @@
             }
           },
           "bootstrap_api_app": {
+            "files" : {
+              "/etc/systemd/system/api.service" : {
+                "content" : { "Fn::Join" : ["", [
+                  "[Unit] \n\n",
+                  "Description=api_service \n",
+                  "After=network.target \n\n",
+                  "[Service] \n",
+                  "WorkingDirectory=/home/ec2-user/source/api \n",
+                  "ExecStart=/home/ec2-user/source/api/env/bin/pserve /home/ec2-user/source/api/production.ini \n\n",
+                  "[Install] \n",
+                  "WantedBy=multi-user.target"
+                  ]]},
+                "mode" :"000644",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
             "commands" : {
               "01_create_virtual_environment": {
                 "command": "python3.8 -m venv env",
                 "cwd": "/home/ec2-user/source/api"
               },
-              "02_activate_virtual_environment": {
-                "command": "source env/bin/activate",
-                "cwd": "/home/ec2-user/source/api"
-              },
-              "02_1_grant_permissions": {
+              "02_grant_permissions": {
                 "command": "chmod 777 api -R",
                 "cwd": "/home/ec2-user/source"
               },
-              "03_install_api_dependencies": {
-                "command": "env/bin/pip install --upgrade pip setuptools",
-                "cwd": "/home/ec2-user/source/api"
-              },
-              "03_1_run_setup_py": {
-                "command": "python setup.py develop",
-                "cwd": "/home/ec2-user/source/api"
-              },
-              "04_launch_pyramid_app_w_pserve": {
-                "command": "env/bin/pserve production.ini",
-                "cwd": "/home/ec2-user/source/api"
+              "03_install_dependencies" : {
+                 "command" : { "Fn::Join" : ["", [
+                                "source env/bin/activate ;",
+                                "env/bin/pip install --upgrade pip setuptools ;",
+                                "python setup.py develop"
+                                ]]
+                              },
+                "cwd" : "/home/ec2-user/source/api"
               }
             }
           }
@@ -96,6 +106,11 @@
                        "         --region ", { "Ref" : "AWS::Region" }, "\n"
           ]]}
         }
+      },
+      "CreationPolicy" : {
+        "ResourceSignal" : {
+          "Timeout" : "PT15M"
+        }
       }
     },
     "ApiServerSecurityGroup" : {
@@ -113,6 +128,10 @@
     "ApiServerUrl" : {
       "Description" : "Url for api server",
        "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "ApiServer", "PublicDnsName" ]}]] }
+    },
+    "api-ssh-command" : {
+      "Description" : "use me to ssh into the api server",
+      "Value" : { "Fn::Join" :  ["", ["ssh -i ", { "Ref" : "KeyName" }, ".pem", " ec2-user@", { "Fn::GetAtt" : [ "ApiServer", "PublicDnsName" ]}]]}
     }
   }
 }

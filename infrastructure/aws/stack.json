@@ -19,11 +19,83 @@
   "Resources" : {
     "ApiServer": {
       "Type": "AWS::EC2::Instance",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "python_install" : [ "provision_file_system", "install_python", "download_api_artifacts" , "bootstrap_api_app" ]
+          },
+          "provision_file_system" : {
+            "commands" : {
+              "01_setup_file_system" : {
+                "command" : "mkdir -p -m777 provision source/api; ls",
+                "cwd" : "/home/ec2-user"
+              }
+            }
+          },
+          "install_python" : {
+            "commands" : {
+              "01_install_python_3_8" : {
+                "command" : "amazon-linux-extras install python3.8",
+                "cwd" : "~"
+              }
+            }
+          },
+          "download_api_artifacts" : {
+            "sources" : {
+              "home/ec2-user/source/api" : "https://github.com/thedanfields/feature-flag-demo/tarball/main"
+            }
+          },
+          "bootstrap_api_app": {
+            "commands" : {
+              "01_create_virtual_environment": {
+                "command": "python3.8 -m venv env",
+                "cwd": "/home/ec2-user/source/api"
+              },
+              "02_activate_virtual_environment": {
+                "command": "source env/bin/activate",
+                "cwd": "/home/ec2-user/source/api"
+              },
+              "02_1_grant_permissions": {
+                "command": "chmod 777 api -R",
+                "cwd": "/home/ec2-user/source"
+              },
+              "03_install_api_dependencies": {
+                "command": "env/bin/pip install --upgrade pip setuptools",
+                "cwd": "/home/ec2-user/source/api"
+              },
+              "03_1_run_setup_py": {
+                "command": "python setup.py develop",
+                "cwd": "/home/ec2-user/source/api"
+              },
+              "04_launch_pyramid_app_w_pserve": {
+                "command": "env/bin/pserve production.ini",
+                "cwd": "/home/ec2-user/source/api"
+              }
+            }
+          }
+         }
+      },
       "Properties" : {
-        "ImageId" : "ami-032930428bf1abbff",
+        "ImageId" : "ami-0ed9277fb7eb570c9",
         "InstanceType" : "t2.micro",
         "KeyName" : { "Ref" : "KeyName" },
-        "SecurityGroups" : [ {"Ref" : "ApiServerSecurityGroup"} ]
+        "SecurityGroups" : [ {"Ref" : "ApiServerSecurityGroup"} ],
+        "UserData" : { "Fn::Base64" :
+          { "Fn::Join" : ["", [
+             "#!/bin/bash -xe\n",
+             "# Install the files and packages from the metadata\n",
+             "/opt/aws/bin/cfn-init -v ",
+             "         --stack ", { "Ref" : "AWS::StackName" },
+             "         --resource ApiServer ",
+             "         --configsets python_install ",
+             "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+             "/opt/aws/bin/cfn-signal -e $? ",
+                       "         --stack ", { "Ref" : "AWS::StackName" },
+                       "         --resource ApiServer ",
+                       "         --region ", { "Ref" : "AWS::Region" }, "\n"
+          ]]}
+        }
       }
     },
     "ApiServerSecurityGroup" : {

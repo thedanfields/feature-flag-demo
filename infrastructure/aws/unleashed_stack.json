@@ -1,0 +1,248 @@
+{
+  "Description" : "east-us-1 stack for unleashed_demo",
+  "Parameters" : {
+    "KeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "Can contain only ASCII characters."
+    },
+    "SSHLocation": {
+      "Description": "The IP address range that can be used to SSH to the EC2 instances",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "Default": "0.0.0.0/0",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x"
+    },
+
+    "DbUserName" : {
+      "Description" : "unleashed database username",
+      "Type" : "String",
+      "MinLength": "1",
+      "MaxLength": "16",
+      "AllowedPattern": "[a-zA-Z0-9]*",
+      "ConstraintDescription": "Must begin with a letter and contain only alphanumeric characters.",
+      "Default": "postgres"
+    },
+    "DbPassword" : {
+      "Description" : "unleashed database password",
+      "Type" : "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern": "[a-zA-Z0-9]*",
+      "ConstraintDescription": "[a-zA-Z0-9]*"
+    },
+    "UnleashUserDbPassword" : {
+      "Description" : "unleashed database password",
+      "Type" : "String",
+      "MinLength": "8",
+      "MaxLength": "41",
+      "AllowedPattern": "[a-zA-Z0-9]*",
+      "ConstraintDescription": "[a-zA-Z0-9]*"
+    }
+  },
+  "Resources" : {
+    "UnleashedServer": {
+      "Type": "AWS::EC2::Instance",
+      "DependsOn" : "UnleashedDatabase",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "install_unleashed" : [ "install_tools", "install_unleashed","bootstrap_unleashed_app", "start_unleashed_app" ]
+          },
+          "install_tools" : {
+            "commands": {
+              "01_download_node": {
+                "command": "sudo amazon-linux-extras install epel",
+                "cwd": "/home/ec2-user"
+              },
+              "02_install_psql_tool" : {
+                "command" : "sudo amazon-linux-extras install postgresql10",
+                "cwd" : "/home/ec2-user"
+              },
+              "03_nvm" : {
+                "command" : "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.2/install.sh | bash",
+                "cwd" : "/home/ec2-user"
+              },
+              "04_01_permission" : {
+                "command" : "chmod 777 /.nvm -R",
+                "cwd" : "/home/ec2-user"
+              },
+              "05_node" : {
+                "command" : ". /.nvm/nvm.sh; nvm install node",
+                "cwd" : "/home/ec2-user"
+              }
+            }
+          },
+          "install_unleashed" : {
+            "commands": {
+              "01_install_unleash_server" : {
+                "command" : ". /.nvm/nvm.sh; npm init --force --yes; npm install unleash-server --save",
+                "cwd" : "/home/ec2-user"
+              }
+            },
+            "files" : {
+              "/home/ec2-user/bootstrap_db.sql" : {
+                "content" : { "Fn::Join": ["", [
+                  "CREATE USER unleash_user WITH PASSWORD '", { "Ref": "UnleashUserDbPassword" }, "' ;\n",
+                  "CREATE DATABASE unleash;\n",
+                  "GRANT ALL PRIVILEGES ON DATABASE unleash to unleash_user;\n"
+                ]]}
+              }
+            }
+          },
+          "bootstrap_unleashed_app": {
+            "files" : {
+              "/home/ec2-user/server.js" : {
+                "content" : { "Fn::Join" : ["", [
+                  "const unleash = require('unleash-server'); \n",
+                  "unleash\n",
+                  "  .start({\n",
+                  "    db: {\n",
+                  "      ssl: false,\n",
+                  "      host: '", { "Fn::GetAtt" : [ "UnleashedDatabase", "Endpoint.Address" ] }, "' ,\n",
+                  "      port: 5432,\n",
+                  "      database: 'unleash',\n",
+                  "      user: '", { "Ref": "DbUserName" }, "' ,\n",
+                  "      password: '", { "Ref": "DbPassword" }, "' ,\n",
+                  "   },\n",
+                  "   server: {\n",
+                  "     port: 80,\n",
+                  "   }\n",
+                  "})\n",
+                  ".then((unleash) => { \n",
+                  "  console.log(\n",
+                  "     'Unleash started.' \n",
+                  "  );\n",
+                  "});"
+                ]]}
+              },
+              "/home/ec2-user/run_unleashed.sh" : {
+                "content" : { "Fn::Join" : ["", [
+                  "#!/bin/bash \n",
+                  ". /.nvm/nvm.sh; node /home/ec2-user/server.js"
+                ]]},
+                "mode" :"000777"
+              },
+              "/etc/systemd/system/unleashed.service" : {
+                "content" : { "Fn::Join" : ["", [
+                  "[Unit] \n\n",
+                  "Description=unleashed_service \n",
+                  "After=network.target \n\n",
+                  "[Service] \n",
+                  "WorkingDirectory=/home/ec2-user \n",
+                  "ExecStart=/home/ec2-user/run_unleashed.sh \n",
+                  "[Install] \n",
+                  "WantedBy=multi-user.target"
+                  ]]},
+                "mode" :"000644",
+                "owner" : "root",
+                "group" : "root"
+              }
+            },
+            "commands" : {
+              "01_create_unleash_database": {
+                "command": {
+                   "Fn::Join" : ["", [
+                     "psql postgresql://", { "Ref" : "DbUserName" }, ":", { "Ref" :  "DbPassword" },
+                     "@", { "Fn::GetAtt" : [ "UnleashedDatabase", "Endpoint.Address" ]},
+                     " -f bootstrap_db.sql -a"
+                   ]]
+                },
+                "cwd": "/home/ec2-user"
+              }
+            }
+          },
+          "start_unleashed_app" : {
+            "services": {
+              "sysvinit" : {
+                "unleashed" : {
+                  "enabled" : "true",
+                  "ensureRunning" : "true"
+                }
+              }
+            }
+          }
+         }
+      },
+      "Properties" : {
+        "ImageId" : "ami-0ed9277fb7eb570c9",
+        "InstanceType" : "t2.micro",
+        "KeyName" : { "Ref" : "KeyName" },
+        "SecurityGroups" : [ {"Ref" : "UnleashedServerSecurityGroup"} ],
+        "UserData" : { "Fn::Base64" :
+          { "Fn::Join" : ["", [
+             "#!/bin/bash -xe\n",
+             "# Install the files and packages from the metadata\n",
+             "/opt/aws/bin/cfn-init -v ",
+             "         --stack ", { "Ref" : "AWS::StackName" },
+             "         --resource UnleashedServer ",
+             "         --configsets install_unleashed ",
+             "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+             "/opt/aws/bin/cfn-signal -e $? ",
+                       "         --stack ", { "Ref" : "AWS::StackName" },
+                       "         --resource UnleashedServer ",
+                       "         --region ", { "Ref" : "AWS::Region" }, "\n"
+          ]]}
+        }
+      }
+    },
+    "UnleashedServerSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable HTTP access via port 80",
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp", "FromPort" : 80, "ToPort" : 80, "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : 443, "ToPort": 443, "CidrIp": "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : 22, "ToPort" : 22, "CidrIp" : { "Ref" : "SSHLocation"}}
+          ]
+        }
+    },
+
+    "UnleashedDatabase": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "VPCSecurityGroups": [{
+          "Fn::GetAtt": ["UnleashedDatabaseSecurityGroup", "GroupId"]
+        }],
+        "AllocatedStorage": "5",
+        "DBInstanceClass" : "db.t3.micro",
+        "Engine": "postgres",
+        "MasterUsername": {
+          "Ref": "DbUserName"
+        },
+        "MasterUserPassword": {
+          "Ref": "DbPassword"
+        }
+      },
+      "DeletionPolicy": "Snapshot",
+      "UpdateReplacePolicy": "Snapshot"
+    },
+    "UnleashedDatabaseSecurityGroup": {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable db access",
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp", "FromPort" : 5432, "ToPort" : 5432, "SourceSecurityGroupName" :  {"Ref" : "UnleashedServerSecurityGroup" }},
+          {"IpProtocol" : "tcp", "FromPort" : 5432, "ToPort": 5432, "CidrIp": "0.0.0.0/0"}
+          ]
+        }
+    }
+  },
+  "Outputs" : {
+    "UnleashedServerUrl" : {
+      "Description" : "Url for api server",
+       "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "UnleashedServer", "PublicDnsName" ]}]] }
+    },
+    "UnleashedSSHCommand" : {
+      "Description" : "use me to ssh into the api server",
+      "Value" : { "Fn::Join" :  ["", ["ssh -i ", { "Ref" : "KeyName" }, ".pem", " ec2-user@", { "Fn::GetAtt" : [ "UnleashedServer", "PublicDnsName" ]}]]}
+    },
+    "UnleashedDatabaseEndpoint": {
+      "Description": "connection endpoint for the database",
+      "Value" : { "Fn::GetAtt" : [ "UnleashedDatabase", "Endpoint.Address" ]}
+    }
+  }
+}

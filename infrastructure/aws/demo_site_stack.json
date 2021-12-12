@@ -1,0 +1,347 @@
+{
+  "Description" : "east-us-1 stack for feature flag demo",
+  "Parameters" : {
+    "KeyName": {
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "Can contain only ASCII characters."
+    },
+    "SSHLocation": {
+      "Description": "The IP address range that can be used to SSH to the EC2 instances",
+      "Type": "String",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "Default": "0.0.0.0/0",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x"
+    },
+    "UnleashedApiEndpoint" : {
+      "Description" : "Url to talk to the unleashed feature flag server",
+      "Type" : "String",
+      "MinLength" : 1,
+      "Default" : "/api"
+    },
+    "UnleashedEnvironment" : {
+      "Description" : "environment name (default / development / production",
+      "Type" : "String",
+      "MinLength" : 1,
+      "Default" : "production"
+    },
+    "UnleashedSecretApiKey" : {
+      "Description" : "secret api key provided by unleashed",
+      "Type" : "String",
+      "MinLength" : 1,
+      "Default" : ""
+    }
+  },
+  "Resources" : {
+
+    "ApiUser" : {
+        "Type" : "AWS::IAM::User",
+        "Properties" : {
+            "UserName" : "service.user.api"
+          }
+    },
+    "ConfigAccessAMIPolicy": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+          "Users" : [ { "Ref" :  "ApiUser" } ],
+          "PolicyName": "app-config-access",
+          "PolicyDocument": {
+
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                      "ssm:GetDocument",
+                      "ssm:ListDocuments",
+                      "appconfig:ListApplications",
+                      "appconfig:GetApplication",
+                      "appconfig:ListEnvironments",
+                      "appconfig:GetEnvironment",
+                      "appconfig:ListConfigurationProfiles",
+                      "appconfig:GetConfigurationProfile",
+                      "appconfig:ListDeploymentStrategies",
+                      "appconfig:GetDeploymentStrategy",
+                      "appconfig:GetConfiguration",
+                      "appconfig:GetHostedConfigurationVersion",
+                      "appconfig:GetLatestConfiguration",
+                      "appconfig:ListDeployments",
+                      "appconfig:GetDeployment",
+                      "appconfig:StartConfigurationSession"
+
+                    ],
+                      "Resource": "*"
+                }
+              ]
+          }
+      }
+    },
+    "ApiUserAccessKey" : {
+      "Type" : "AWS::IAM::AccessKey",
+      "Properties" : {
+        "UserName" : { "Ref" : "ApiUser" }
+      }
+    },
+
+    "ApiServer": {
+      "Type": "AWS::EC2::Instance",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "configSets" : {
+            "python_install" : [ "provision_file_system", "install_python", "download_api_artifacts" , "bootstrap_api_app" ]
+          },
+          "provision_file_system" : {
+            "commands" : {
+              "01_setup_file_system" : {
+                "command" : "mkdir -p -m777 provision source/api; ls",
+                "cwd" : "/home/ec2-user"
+              }
+            },
+            "files" : {
+              "/home/ec2-user/.aws/credentials": {
+                "content": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "[default]\n",
+                      "aws_access_key_id =",
+                      {
+                        "Ref": "ApiUserAccessKey"
+                      },
+                      "\n",
+                      "aws_secret_access_key = ",
+                      {
+                        "Fn::GetAtt": [
+                          "ApiUserAccessKey",
+                          "SecretAccessKey"
+                        ]
+                      },
+                      "\n"
+                    ]
+                  ]
+                }
+              },
+              "/home/ec2-user/.aws/config": {
+                "content" : {
+                  "Fn::Join": ["", [
+                    "[default]\n",
+                    {"Ref":  "AWS::Region"}
+                  ]]
+                }
+              }
+            }
+          },
+          "install_python" : {
+            "commands" : {
+              "01_install_python_3_8" : {
+                "command" : "amazon-linux-extras install python3.8",
+                "cwd" : "~"
+              }
+            }
+          },
+          "download_api_artifacts" : {
+            "sources" : {
+              "home/ec2-user/source/api" : "https://github.com/thedanfields/feature-flag-demo/tarball/main"
+            }
+          },
+          "bootstrap_api_app": {
+            "files" : {
+              "/etc/systemd/system/api.service" : {
+                "content" : { "Fn::Join" : ["", [
+                  "[Unit] \n\n",
+                  "Description=api_service \n",
+                  "After=network.target \n\n",
+                  "[Service] \n",
+                  "WorkingDirectory=/home/ec2-user/source/api \n",
+                  "ExecStart=/home/ec2-user/source/api/env/bin/pserve /home/ec2-user/source/api/production.ini \n\n",
+                  "[Install] \n",
+                  "WantedBy=multi-user.target"
+                  ]]},
+                "mode" :"000644",
+                "owner" : "root",
+                "group" : "root"
+              },
+              "home/ec2-user/source/api/feature_flag_config.ini" : {
+                "content" : { "Fn::Join" : ["", [
+                  "[unleashed] \n",
+                  "endpoint=", { "Ref" : "UnleashedApiEndpoint"}, "\n",
+                  "api_secret_key", { "Ref" : "UnleashedSecretApiKey"},"\n",
+                  "environment", { "Ref" : "UnleashedEnvironment"},"\n"
+                ]]},
+                "mode" : "000644"
+              }
+            },
+            "commands" : {
+              "01_create_virtual_environment": {
+                "command": "python3.8 -m venv env",
+                "cwd": "/home/ec2-user/source/api"
+              },
+              "02_grant_permissions": {
+                "command": "chmod 777 api -R",
+                "cwd": "/home/ec2-user/source"
+              },
+              "03_install_dependencies" : {
+                 "command" : { "Fn::Join" : ["", [
+                                "source env/bin/activate ;",
+                                "env/bin/pip install --upgrade pip setuptools ;",
+                                "python setup.py develop"
+                                ]]
+                              },
+                "cwd" : "/home/ec2-user/source/api"
+              }
+            },
+            "services" : {
+              "sysvinit" : {
+                "api" : {
+                  "enabled" : "true",
+                  "ensureRunning" : "true"
+                }
+              }
+            }
+          }
+         }
+      },
+      "Properties" : {
+        "ImageId" : "ami-0ed9277fb7eb570c9",
+        "InstanceType" : "t2.micro",
+        "KeyName" : { "Ref" : "KeyName" },
+        "SecurityGroups" : [ {"Ref" : "ApiServerSecurityGroup"} ],
+        "UserData" : { "Fn::Base64" :
+          { "Fn::Join" : ["", [
+             "#!/bin/bash -xe\n",
+             "# Install the files and packages from the metadata\n",
+             "/opt/aws/bin/cfn-init -v ",
+             "         --stack ", { "Ref" : "AWS::StackName" },
+             "         --resource ApiServer ",
+             "         --configsets python_install ",
+             "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+             "/opt/aws/bin/cfn-signal -e $? ",
+                       "         --stack ", { "Ref" : "AWS::StackName" },
+                       "         --resource ApiServer ",
+                       "         --region ", { "Ref" : "AWS::Region" }, "\n"
+          ]]}
+        }
+      },
+      "CreationPolicy" : {
+        "ResourceSignal" : {
+          "Timeout" : "PT15M"
+        }
+      }
+    },
+    "ApiServerSecurityGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable HTTP access via port 80",
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp", "FromPort" : 80, "ToPort" : 80, "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : 443, "ToPort": 443, "CidrIp": "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : 22, "ToPort" : 22, "CidrIp" : { "Ref" : "SSHLocation"}}
+          ]
+        }
+    },
+
+    "ApiAppConfig" : {
+      "Type": "AWS::AppConfig::Application",
+      "Properties": {
+        "Name": "ApiAppConfig",
+        "Description": "app config for api application"
+       }
+      },
+    "ApiAppConfigDemoEnvironment": {
+      "Type": "AWS::AppConfig::Environment",
+      "DependsOn": "ApiAppConfig",
+      "Properties": {
+        "ApplicationId": { "Ref" : "ApiAppConfig"},
+        "Name": "demo",
+        "Description": "api app config demo environment"
+      }
+    },
+    "ApiAppConfigProfile" : {
+      "Type" : "AWS::AppConfig::ConfigurationProfile",
+      "Properties" : {
+        "ApplicationId" : { "Ref" : "ApiAppConfig" },
+        "LocationUri" : "hosted",
+        "Name" : "api service",
+        "Validators" :[
+          {
+            "Type": "JSON_SCHEMA",
+            "Content": {
+              "Fn::Join": [
+                "",
+                [
+                  "{ \n",
+                  " \"title\" : \"api service\", \n",
+                  " \"description\" : \"config json for the api service\", \n",
+                  " \"type\" : \"object\", \n",
+                  " \"properties\" : {\n",
+                  " \"includeSpicySalsa\" : {\n",
+                  "   \"description\" : \"adds spicy salsa to the taco\",\n",
+                  "   \"type\" : \"boolean\"\n",
+                  " },\n",
+                  " \"extraLimeWedges\" : {\n",
+                  "   \"description\" : \"number of extra lime wedges to include\",\n",
+                  "   \"type\" : \"number\"\n",
+                  "  }\n",
+                  "},\n",
+                  "\"required\" : [\"includeSpicySalsa\", \"extraLimeWedges\"]\n",
+                  "}"
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ApiAppConfigDeploymentStrategy" : {
+      "Type" : "AWS::AppConfig::DeploymentStrategy",
+      "Properties" : {
+        "Name" : "api app config deployment strategy",
+        "ReplicateTo" : "NONE",
+        "DeploymentDurationInMinutes" : 0,
+        "FinalBakeTimeInMinutes" : 0,
+        "GrowthFactor" : 100,
+        "GrowthType" : "LINEAR"
+      }
+    },
+    "ApiAppConfigVersion" : {
+      "Type" : "AWS::AppConfig::HostedConfigurationVersion",
+      "Properties" : {
+        "ApplicationId" : { "Ref" : "ApiAppConfig" },
+        "ConfigurationProfileId" : { "Ref" : "ApiAppConfigProfile" },
+        "ContentType": "application/json",
+        "Content" : {
+          "Fn::Join" : ["", [
+            "{ \n",
+            " \"includeSpicySalsa\": false, \n",
+            " \"extraLimeWedges\": 0 \n",
+            "}"
+          ]]
+        }
+      }
+    },
+    "ApiAppConfigDeployment" : {
+      "Type" : "AWS::AppConfig::Deployment",
+      "Properties" : {
+        "ApplicationId" : { "Ref" : "ApiAppConfig" },
+        "ConfigurationProfileId" : { "Ref" : "ApiAppConfigProfile" },
+        "ConfigurationVersion" : { "Ref" : "ApiAppConfigVersion" },
+        "DeploymentStrategyId" : { "Ref" : "ApiAppConfigDeploymentStrategy"},
+        "EnvironmentId" : { "Ref" : "ApiAppConfigDemoEnvironment"}
+      }
+    }
+
+  },
+  "Outputs" : {
+    "ApiServerUrl" : {
+      "Description" : "Url for api server",
+       "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "ApiServer", "PublicDnsName" ]}]] }
+    },
+    "ApiSSHCommand" : {
+      "Description" : "use me to ssh into the api server",
+      "Value" : { "Fn::Join" :  ["", ["ssh -i ", { "Ref" : "KeyName" }, ".pem", " ec2-user@", { "Fn::GetAtt" : [ "ApiServer", "PublicDnsName" ]}]]}
+    }
+  }
+}

@@ -14,6 +14,9 @@ requires = [
     'pyramid_jinja2',
     'pyramid_debugtoolbar',
     'waitress',
+
+    'sample-helper-aws-appconfig',
+    'UnleashClient'
 ]
 
 tests_require = [

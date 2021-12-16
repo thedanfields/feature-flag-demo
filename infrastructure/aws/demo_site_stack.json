@@ -18,19 +18,24 @@
     "UnleashedApiEndpoint" : {
       "Description" : "Url to talk to the unleashed feature flag server",
       "Type" : "String",
-      "MinLength" : 1,
+      "MinLength" : 0,
       "Default" : "/api"
     },
     "UnleashedEnvironment" : {
       "Description" : "environment name (default / development / production",
       "Type" : "String",
-      "MinLength" : 1,
+      "MinLength" : 0,
       "Default" : "production"
     },
     "UnleashedSecretApiKey" : {
       "Description" : "secret api key provided by unleashed",
       "Type" : "String",
-      "MinLength" : 1,
+      "MinLength" : 0,
+      "Default" : ""
+    },"LaunchDarklySdkKey" : {
+      "Description" : "launch darkly sdk key",
+      "Type" : "String",
+      "MinLength" : 0,
       "Default" : ""
     }
   },
@@ -163,12 +168,15 @@
                 "owner" : "root",
                 "group" : "root"
               },
-              "home/ec2-user/source/api/feature_flag_config.ini" : {
+              "/home/ec2-user/source/api/feature_flag_config.ini" : {
                 "content" : { "Fn::Join" : ["", [
                   "[unleashed] \n",
                   "endpoint=", { "Ref" : "UnleashedApiEndpoint"}, "\n",
-                  "api_secret_key", { "Ref" : "UnleashedSecretApiKey"},"\n",
-                  "environment", { "Ref" : "UnleashedEnvironment"},"\n"
+                  "api_secret_key=", { "Ref" : "UnleashedSecretApiKey"},"\n",
+                  "environment=", { "Ref" : "UnleashedEnvironment"},"\n",
+                  "\n",
+                  "[launch_darkly]\n",
+                  "sdk_key=", { "Ref" : "LaunchDarklySdkKey" }
                 ]]},
                 "mode" : "000644"
               }
@@ -225,11 +233,7 @@
           ]]}
         }
       },
-      "CreationPolicy" : {
-        "ResourceSignal" : {
-          "Timeout" : "PT15M"
-        }
-      }
+
     },
     "ApiServerSecurityGroup" : {
       "Type" : "AWS::EC2::SecurityGroup",

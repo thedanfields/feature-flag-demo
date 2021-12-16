@@ -2,8 +2,8 @@
 body {
   font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-weight: 300;
-  color: #ffffff;
-  background: #bc2131;
+  color: #676767;
+  background: #F3E7DC;
 }
 h1,
 h2,
@@ -11,7 +11,7 @@ h3,
 h4,
 h5,
 h6 {
-  font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-family: 'Rye', cursive;
   font-weight: 300;
 }
 p {
@@ -154,4 +154,92 @@ button, input, optgroup, select, textarea {
   .starter-template .copyright {
     margin-top: 20px;
   }
+}
+
+div.options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+div.option {
+  border: 2px dashed black;
+
+  width: 30%;
+  padding-bottom: 20%; /* Same as width, sets height */
+  margin: 2%; /* (100-32*3)/2 */
+  position: relative;
+
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+div.option.ordered {
+  border: 2px dotted #558EC4;
+}
+
+div.option.asada {
+  background-image: url('icons/bull_skull.png');
+}
+
+div.option.nopal {
+  background-image: url('icons/cactus.png');
+}
+
+div.option.pastor {
+   background-image: url('icons/pig.png');
+}
+
+div.option.cricket {
+  background-image: url('icons/cricket.png');
+}
+
+div.option.chicken {
+  background-image: url('icons/hen.png');
+}
+
+div.option.fish {
+  background-image: url('icons/fish.png');
+}
+
+div.option.avocado {
+  background-image: url('icons/avocado.png');
+}
+
+div.option.cheese {
+  background-image: url('icons/cheese.png');
+}
+
+div.option.elote {
+  background-image: url('icons/elote.png');
+}
+
+div.option.pepper {
+  background-image: url('icons/pepper.png');
+}
+
+div.option.tortilla {
+  background-image: url('icons/tortilla.png');
+}
+
+div.option.waffle {
+  background-image: url('icons/waffle.png');
+}
+
+#feature-flags {
+  color: black;
+  font-weight: 800;
+}
+
+#feature-flags li {
+  padding-bottom: 3px;
+}
+
+#order-result {
+  text-transform: uppercase;
+}
+
+h4.ordered, span.ordered {
+  color: #558EC4;
 }

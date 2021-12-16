@@ -16,6 +16,7 @@ requires = [
     'waitress',
 
     'sample-helper-aws-appconfig',
+    'launchdarkly-server-sdk',
     'UnleashClient'
 ]
 

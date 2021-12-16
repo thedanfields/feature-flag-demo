@@ -1,11 +1,65 @@
 {% extends "layout.jinja2" %}
 
 {% block content %}
-<div class="content">
-  <h1><span class="font-semi-bold">Pyramid</span> <span class="smaller">Starter project</span></h1>
-  <p class="lead">Welcome to <span class="font-normal">{{project}}</span>, a&nbsp;Pyramid application generated&nbsp;by<br><span class="font-normal">Cookiecutter</span>.</p>
 
-{{ flags }}
+ <div class="row taco-shack">
+     <div class="col-sm-10">
+          <h1>TACO SACK</h1>
+          <div class="col-sm-4">
+              <h4 class="ordered">proteins</h4>
+              <div class="options proteins">
+{#                  <div class="option asada"></div>#}
+{#                  <div class="option pastor"></div>#}
+{#                  <div class="option chicken"></div>#}
+              </div>
+          </div>
+          <div class="col-sm-4">
+              <h4 class="ordered">shells</h4>
+              <div class="options shells">
+{#                  <div class="option tortilla"></div>#}
+              </div>
+          </div>
+          <div class="col-sm-4">
+              <h4 class="ordered">extras</h4>
+              <div class="options extras">
+{#                  <div class="option cheese"></div>#}
+              </div>
+          </div>
+      </div>
+     <div class="col-sm-2">
+          <div id="feature-flags">
 
-</div>
+          </div>
+      </div>
+ </div>
+    <div class="row taco-shack" style="margin: 10px">
+        <div class="col-md-2">
+            <button type="button" class="btn btn-primary" id="order-button">ORDER</button>
+        </div>
+        <div  class="col-md-10">
+            <h4 id="order-result" ></h4>
+        </div>
+    </div>
+
 {% endblock content %}
+
+{% block body_script %}
+    <script src="javascript/feature_flags.js"></script>
+    <script src="javascript/taco_options.js"></script>
+    <script src="javascript/mytemplate.js"></script>
+    <script>
+        const app = {
+            flags: JSON.parse('{{ flags | tojson |safe }}')
+        }
+
+        window.onload = (_) => {
+            window.page = new MyTemplate(app);
+            $('#order-button').click(function() {
+                const order_html = window.page.order() ;
+                $('#order-result').html(order_html);
+            })
+            console.log("loaded")
+        };
+
+    </script>
+{% endblock body_script %}
